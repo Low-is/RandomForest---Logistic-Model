@@ -1,0 +1,84 @@
+rf_model <- function(exprs_mtx_df) {
+  # library(caert)
+  # library(pROC)
+  # library(ggplot2)
+  
+  if(!is.data.frame(exprs_mtx_df)) {
+    stop("Input is not data frame.")
+  }
+  
+  # exprs_mtx_df <- merged_mtx_batch_df
+  
+  factor_col <- colnames(exprs_mtx_df)[sapply(exprs_mtx_df, function(col) is.factor(col) && length(levels(col)) == 2)]
+  if(length(factor_col) == 0) {
+    stop("Need a factor column with exactly two levels.")
+  }
+  
+  message("Make sure ref group is set as the control group before proceeding")
+  
+  exprs_mtx_df[[factor_col]] <- factor(exprs_mtx_df[[factor_col]],
+                                       levels = levels(exprs_mtx_df[[factor_col]]),
+                                       labels = c(0,1))
+  
+  set.seed(4242)
+  split <- createDataPartition(exprs_mtx_df[[factor_col]],
+                               p = 0.7,
+                               list = FALSE,
+                               times = 1)
+  
+  train <- exprs_mtx_df[split, ]
+  test <- exprs_mtx_df[-split, ]
+  
+  ctrl <- trainControl(method = "repeatedcv",
+                       number = 10,
+                       repeats = 10,
+                       allowParallel = FALSE)
+  
+  formula <- as.formula(paste(factor_col, "~ ."))
+  
+  set.seed(3737)
+  model <- train(formula,
+                 method = "rf",
+                 data = train,
+                 trControl = ctrl)
+  
+  model_predict <- predict(model, test, type = "prob")
+  factor_levels <- levels(exprs_mtx_df[[factor_col]])
+  model_predict <- model_predict[[factor_levels[2]]]
+  
+  model_prediction <- prediction(model_predict, test[[factor_col]])
+  model_auc <- performance(model_prediction, "auc")@y.values[[1]]
+  model_performance <- performance(model_prediction, "tpr", "fpr")
+  
+  roc_obj <- roc(test[[factor_col]], model_predict)
+  ci_auc <- ci.auc(roc_obj)
+  
+  df <- data.frame(
+    fpr = unlist(model_performance@x.values),
+    tpr = unlist(model_performance@y.values)
+  )
+  
+  
+  plot <- ggplot(df, aes(x = fpr, y = tpr)) +
+    geom_line(color = "blue", linewidth = 2) +
+    geom_abline(linetype = "dashed", color = "black") +
+    labs(
+      x = "1 - Specificity (False Positive Rate)",
+      y = "Sensitivity (True Positive Rate)"
+    ) +
+    annotate("text", x = 0.6, y = 0.1, 
+             label = sprintf("AUC = %.3f (95%% CI: %.2f-%.2f)\n Sensitivity = %.2f \n Specificity = %.2f", 
+                             model_auc, ci_auc[1], ci_auc[3],
+                             0.7045,0.8800), 
+             size = 5, color = "black", hjust = .5) +
+    theme(legend.position = "none",
+          plot.margin = unit(c(.75,.75,.75,.75), "inches"),
+          axis.text = element_text(size = 12),  
+          axis.text.x = element_text(size = 14),  
+          axis.text.y = element_text(size = 14))
+  
+  
+  file_path <- getwd()
+  ggsave(paste0(file_path, "/", "roc_plot.pdf"), plot = plot, width = 8, height = 8, dpi = 300)
+  
+}
