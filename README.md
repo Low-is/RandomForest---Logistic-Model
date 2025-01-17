@@ -5,3 +5,4 @@ The function then fits the random forest model to the training data, computes pe
 and generates a ROC curve. The resulting plot is saved as a PDF. This approach allows for robust evaluation and visualization of the model's 
 classification performance, using only your expression matrix (converted into a data frame) as the only input eliminating the time needed to 
 prepare the data prior to building the model.
+![ROC cruve example](roc_plot.png)
